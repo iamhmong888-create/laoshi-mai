@@ -349,7 +349,24 @@ vid.addEventListener('change',()=>{
   $('#drop').classList.add('has');
   $('#dropTxt').innerHTML='<b>'+f.name.replace(/</g,'&lt;')+'</b><br><span class="hint" style="font-size:14px">'+(f.size/1048576).toFixed(1)+' MB · แตะเพื่อเปลี่ยนไฟล์</span>';
   prev.src=URL.createObjectURL(f);prev.style.display='block';
+  thumb='';makeThumb(f).then(t=>{if(vid.files[0]===f)thumb=t}).catch(()=>{});
 });
+/* grab one frame (about 1 s in) as a small JPEG cover for the teacher page */
+let thumb='';
+function makeThumb(file){return new Promise(res=>{
+  const v=document.createElement('video');let done=false;
+  const end=t=>{if(done)return;done=true;try{URL.revokeObjectURL(v.src)}catch(e){}res(t||'')};
+  setTimeout(()=>end(''),8000);
+  v.muted=true;v.playsInline=true;v.preload='auto';v.src=URL.createObjectURL(file);
+  v.onloadeddata=()=>{try{v.currentTime=Math.min(1,(v.duration||2)/3)}catch(e){end('')}};
+  v.onseeked=()=>{try{
+    const W=360,H=Math.round(W*(v.videoHeight||9)/(v.videoWidth||16)),c=document.createElement('canvas');c.width=W;c.height=Math.min(H,640);
+    c.getContext('2d').drawImage(v,0,0,c.width,c.height);let q=.72,u=c.toDataURL('image/jpeg',q);
+    while(u.length>40000&&q>.3){q-=.12;u=c.toDataURL('image/jpeg',q)}
+    end(u.length<45000?u:'')}catch(e){end('')}};
+  v.onerror=()=>end('');
+  v.load();
+})}
 const post=o=>fetch(URL_,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(o)}).then(r=>r.json());
 function b64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
 $('#hwForm').addEventListener('submit',async e=>{
@@ -372,7 +389,7 @@ $('#hwForm').addEventListener('submit',async e=>{
     for(let s=0;s<f.size;s+=CH){
       const end=Math.min(f.size,s+CH),data=b64(await f.slice(s,end).arrayBuffer());
       for(let tr=0;tr<3;tr++){
-        try{res=await post({action:'chunk',uploadUrl:init.uploadUrl,start:s,end:end-1,total:f.size,mime,name,data});if(res.ok)break}
+        try{res=await post({action:'chunk',uploadUrl:init.uploadUrl,start:s,end:end-1,total:f.size,mime,name,data,thumb:end===f.size?thumb:''});if(res.ok)break}
         catch(err){res={ok:false,error:'เครือข่ายขัดข้อง'}}
         await new Promise(r=>setTimeout(r,1500));
       }
@@ -385,7 +402,7 @@ $('#hwForm').addEventListener('submit',async e=>{
   }catch(err){console.error(err);bar.style.display='none';set(0,'');toast('ส่งไม่สำเร็จ: '+(err.message||err),5000)}
   btn.disabled=false;
 });
-$('#again').addEventListener('click',()=>{$('#done').style.display='none';$('#sendBtn').style.display='';vid.value='';prev.removeAttribute('src');prev.style.display='none';$('#drop').classList.remove('has');$('#dropTxt').innerHTML='<b>แตะเพื่อเลือกหรืออัดวิดีโอ</b>'});
+$('#again').addEventListener('click',()=>{$('#done').style.display='none';$('#sendBtn').style.display='';vid.value='';thumb='';prev.removeAttribute('src');prev.style.display='none';$('#drop').classList.remove('has');$('#dropTxt').innerHTML='<b>แตะเพื่อเลือกหรืออัดวิดีโอ</b>'});
 }
 </script>
 </body>

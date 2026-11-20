@@ -36,7 +36,8 @@
 .badge{display:inline-block;font-size:12px;border-radius:99px;padding:1px 9px;background:var(--ok);color:#fff;vertical-align:3px}
 .empty{text-align:center;color:var(--muted);padding:40px 10px}
 .meter{height:10px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}.meter i{display:block;height:100%;background:var(--red)}
-.item .vbox video{position:absolute;inset:0;width:100%;height:100%;background:#000}
+.item .vbox video{position:absolute;inset:0;width:100%;height:100%;background:#1a0f0c;object-fit:contain}
+.item .vbox .vmsg{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(0,0,0,.7);color:#fff;font-size:13px;padding:6px 10px;border-radius:8px;text-align:center}
 .warn{background:var(--bad)}
 .item.new{box-shadow:0 0 0 3px var(--gold),0 10px 30px -12px rgba(179,22,27,.5)}
 .badge.nw{background:var(--red)}
@@ -147,9 +148,14 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&pw&&timer
 /* ---------- view: update cards in place so a playing video keeps playing ---------- */
 const filtered=()=>{const q=$('#q').value.trim().toLowerCase(),f=$('#flt').value;return items.filter(x=>(!q||x.name.toLowerCase().includes(q))&&(f==='all'||(f==='done')===x.checked))};
 const nameHTML=x=>`${esc(x.name)} ${newIds.has(x.id)?'<span class="badge nw">ใหม่</span>':''}${x.checked?' <span class="badge">ตรวจแล้ว</span>':''}`;
+// plays the original file straight from Drive (no waiting for Drive's own video processing)
+const srcOf=id=>'https://drive.usercontent.google.com/download?id='+encodeURIComponent(id)+'&export=download';
+const videoHTML=x=>x.thumb
+  ?`<video controls playsinline preload="none" poster="${esc(x.thumb)}" src="${srcOf(x.id)}"></video>`
+  :`<video controls playsinline preload="metadata" src="${srcOf(x.id)}#t=0.5"></video>`;
 const cardHTML=x=>`
    <article class="item ${x.checked?'chk':''} ${newIds.has(x.id)?'new':''}" data-id="${esc(x.id)}">
-     <div class="vbox"><button class="btn btn-gold sm" data-a="play" type="button">▶ ดูวิดีโอ</button></div>
+     <div class="vbox">${videoHTML(x)}</div>
      <div class="info"><div class="nm">${nameHTML(x)}</div>
        <div class="meta">${new Date(x.time).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'})} · ${x.mb} MB</div></div>
      <div class="row">
@@ -185,10 +191,15 @@ $('#reload').addEventListener('click',()=>load(true));
 $('#q').addEventListener('input',render);$('#flt').addEventListener('change',render);
 $('#links').addEventListener('click',e=>{if(e.target.id==='notiBtn')Notification.requestPermission().then(()=>liveText(true))});
 
+// mark as seen when the teacher starts a video; if the browser cannot play this file, fall back to Drive's player
+$('#list').addEventListener('play',e=>{const c=e.target.closest('.item');if(c)seen(c.dataset.id)},true);
+$('#list').addEventListener('error',e=>{
+  const v=e.target;if(v.tagName!=='VIDEO'&&!(v.tagName==='SOURCE'))return;const c=v.closest('.item');if(!c||c.dataset.fb)return;c.dataset.fb='1';
+  c.querySelector('.vbox').innerHTML=`<iframe src="https://drive.google.com/file/d/${encodeURIComponent(c.dataset.id)}/preview" allow="autoplay; fullscreen" allowfullscreen title="วิดีโอ"></iframe><div class="vmsg">ถ้ายังเล่นไม่ได้ กด “เปิดใน Drive” หรือรอ Drive ประมวลผลสักครู่</div>`;
+},true);
 let delId=null;
 $('#list').addEventListener('click',e=>{
   const el=e.target.closest('[data-a]');if(!el)return;const card=el.closest('.item'),id=card.dataset.id,x=items.find(i=>i.id===id);
-  if(el.dataset.a==='play'){card.querySelector('.vbox').innerHTML=`<iframe src="https://drive.google.com/file/d/${encodeURIComponent(id)}/preview" allow="autoplay; fullscreen" allowfullscreen title="วิดีโอของ ${esc(x.name)}"></iframe>`;seen(id)}
   if(el.dataset.a==='del'){delId=id;$('#dlgTxt').textContent=x.name+' · ไฟล์จะถูกย้ายไปถังขยะใน Drive';$('#dlg').classList.add('on');$('#dlgNo').focus()}
 });
 $('#list').addEventListener('change',async e=>{
