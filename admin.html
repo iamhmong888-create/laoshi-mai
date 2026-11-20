@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>เหล่าซือไหม หน้าครู</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=K2D:wght@400;500;600;700&family=Noto+Serif+SC:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+.top .wrap{padding-block:clamp(16px,3vw,26px)}
+.brand h1{font-size:clamp(30px,5vw,44px)}
+.login{max-width:420px;margin:0 auto;background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:26px;display:grid;gap:14px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+.bar input{flex:1 1 220px;width:auto}.bar select{flex:0 1 180px;width:auto}
+.stats{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px}
+.stat{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:12px 18px;min-width:140px}
+.stat b{display:block;font:600 32px K2D,sans-serif;color:var(--red);line-height:1.1}
+.stat span{color:var(--muted);font-size:14px}
+.links{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:15px;margin:-6px 0 16px}
+.links a{color:var(--red)}
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:16px}
+.item{background:var(--paper);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
+.item.chk{border-color:var(--ok)}
+.item .vbox{aspect-ratio:16/9;background:#1a0f0c;display:grid;place-items:center;position:relative}
+.item .vbox iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.item .vbox .btn{position:relative}
+.item .info{padding:12px 14px;display:grid;gap:4px}
+.item .nm{font:500 20px K2D,sans-serif}
+.item .meta{color:var(--muted);font-size:14px}
+.item .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 14px 14px;margin-top:auto}
+.chkl{display:inline-flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-weight:600;margin-right:auto}
+.chkl input{width:22px;height:22px;accent-color:var(--ok)}
+.btn.sm{min-height:40px;padding:0 14px;font-size:14px}
+.badge{display:inline-block;font-size:12px;border-radius:99px;padding:1px 9px;background:var(--ok);color:#fff;vertical-align:3px}
+.empty{text-align:center;color:var(--muted);padding:40px 10px}
+.dlg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;place-items:center;z-index:40;padding:16px}
+.dlg.on{display:grid}
+.dlg>div{background:var(--paper);border-radius:18px;padding:22px;max-width:380px;width:100%;display:grid;gap:14px}
+.dlg .r{display:flex;gap:8px;justify-content:flex-end}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap"><div class="brand"><h1>เหล่าซือไหม<span class="seal hz">老师</span></h1><p>หน้าครู · ตรวจการบ้านวิดีโอ</p></div></div>
+</header>
+
+<main class="band"><div class="wrap">
+  <div id="cfgNote" class="notice" hidden>ยังไม่ได้ตั้งค่า SCRIPT_URL ในไฟล์ config.js (ดูวิธีใน README)</div>
+
+  <form class="login" id="login">
+    <h2>เข้าสู่ระบบครู</h2>
+    <div><label class="lb" for="pw">รหัสผ่าน</label><input type="password" id="pw" autocomplete="current-password" required></div>
+    <button class="btn btn-red" type="submit">เข้าสู่ระบบ</button>
+    <p class="hint" id="loginErr" style="color:var(--bad)"></p>
+  </form>
+
+  <section id="app" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="links" id="links"></div>
+    <div class="bar">
+      <input type="search" id="q" placeholder="ค้นหาชื่อนักเรียน" aria-label="ค้นหาชื่อนักเรียน">
+      <select id="flt" aria-label="ตัวกรอง"><option value="all">ทั้งหมด</option><option value="todo">ยังไม่ตรวจ</option><option value="done">ตรวจแล้ว</option></select>
+      <button class="btn btn-gold" id="reload" type="button">รีเฟรช</button>
+      <button class="btn btn-ghost" id="logout" type="button">ออกจากระบบ</button>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+</div></main>
+
+<div class="dlg" id="dlg" role="dialog" aria-modal="true"><div>
+  <h3>ลบการบ้านนี้?</h3><p id="dlgTxt" class="hint"></p>
+  <div class="r"><button class="btn btn-ghost sm" id="dlgNo" type="button">ยกเลิก</button><button class="btn btn-red sm" id="dlgYes" type="button">ลบ</button></div>
+</div></div>
+<div class="toast" id="toast" role="status"></div>
+<footer class="foot">เหล่าซือไหม · หน้าครู</footer>
+
+<script src="config.js"></script>
+<script>
+{
+const $=s=>document.querySelector(s);
+const toast=(m,ms=3000)=>{const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const URL_=(window.LAOSHI_CONFIG||{}).SCRIPT_URL||'';
+if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(URL_))$('#cfgNote').hidden=false;
+let pw='',items=[];
+try{pw=sessionStorage.getItem('laoshi_pw')||''}catch(e){}
+const post=o=>fetch(URL_,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...o,pw})}).then(r=>r.json());
+
+async function load(){
+  $('#list').innerHTML='<p class="empty">กำลังโหลด…</p>';
+  try{
+    const r=await post({action:'list'});
+    if(!r.ok)throw new Error(r.error);
+    items=r.items;$('#login').hidden=true;$('#app').hidden=false;
+    $('#links').innerHTML=`<a href="${esc(r.folderUrl)}" target="_blank" rel="noopener">เปิดโฟลเดอร์วิดีโอใน Drive</a><a href="${esc(r.sheetUrl)}" target="_blank" rel="noopener">เปิดรายชื่อใน Google Sheet</a>`;
+    render();
+  }catch(err){
+    $('#app').hidden=true;$('#login').hidden=false;$('#loginErr').textContent=err.message||'เชื่อมต่อไม่ได้';
+    try{sessionStorage.removeItem('laoshi_pw')}catch(e){}
+  }
+}
+function render(){
+  const q=$('#q').value.trim().toLowerCase(),f=$('#flt').value;
+  const people=new Set(items.map(x=>x.name.trim())).size,done=items.filter(x=>x.checked).length;
+  $('#stats').innerHTML=`<div class="stat"><b>${items.length}</b><span>วิดีโอที่ส่งมา</span></div><div class="stat"><b>${people}</b><span>นักเรียน</span></div><div class="stat"><b>${done}</b><span>ตรวจแล้ว</span></div><div class="stat"><b>${items.length-done}</b><span>รอตรวจ</span></div>`;
+  const v=items.filter(x=>(!q||x.name.toLowerCase().includes(q))&&(f==='all'||(f==='done')===x.checked));
+  $('#list').innerHTML=v.length?v.map(x=>`
+   <article class="item ${x.checked?'chk':''}" data-id="${esc(x.id)}">
+     <div class="vbox"><button class="btn btn-gold sm" data-a="play" type="button">▶ ดูวิดีโอ</button></div>
+     <div class="info"><div class="nm">${esc(x.name)} ${x.checked?'<span class="badge">ตรวจแล้ว</span>':''}</div>
+       <div class="meta">${new Date(x.time).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'})} · ${x.mb} MB</div></div>
+     <div class="row">
+       <label class="chkl"><input type="checkbox" data-a="mark" ${x.checked?'checked':''}>ตรวจแล้ว</label>
+       <a class="btn btn-ghost sm" href="https://drive.google.com/file/d/${encodeURIComponent(x.id)}/view" target="_blank" rel="noopener">เปิดใน Drive</a>
+       <button class="btn btn-ghost sm" data-a="del" type="button">ลบ</button>
+     </div>
+   </article>`).join(''):`<p class="empty">${items.length?'ไม่พบรายการที่ค้นหา':'ยังไม่มีนักเรียนส่งการบ้าน'}</p>`;
+}
+
+$('#login').addEventListener('submit',e=>{e.preventDefault();pw=$('#pw').value;try{sessionStorage.setItem('laoshi_pw',pw)}catch(e){}load()});
+$('#logout').addEventListener('click',()=>{pw='';try{sessionStorage.removeItem('laoshi_pw')}catch(e){}$('#app').hidden=true;$('#login').hidden=false;$('#pw').value=''});
+$('#reload').addEventListener('click',load);
+$('#q').addEventListener('input',render);$('#flt').addEventListener('change',render);
+
+let delId=null;
+$('#list').addEventListener('click',e=>{
+  const el=e.target.closest('[data-a]');if(!el)return;const card=el.closest('.item'),id=card.dataset.id,x=items.find(i=>i.id===id);
+  if(el.dataset.a==='play'){card.querySelector('.vbox').innerHTML=`<iframe src="https://drive.google.com/file/d/${encodeURIComponent(id)}/preview" allow="autoplay; fullscreen" allowfullscreen title="วิดีโอของ ${esc(x.name)}"></iframe>`}
+  if(el.dataset.a==='del'){delId=id;$('#dlgTxt').textContent=x.name+' · ไฟล์จะถูกย้ายไปถังขยะใน Drive';$('#dlg').classList.add('on');$('#dlgNo').focus()}
+});
+$('#list').addEventListener('change',async e=>{
+  if(e.target.dataset.a!=='mark')return;const id=e.target.closest('.item').dataset.id,x=items.find(i=>i.id===id),val=e.target.checked;
+  x.checked=val;render();
+  try{const r=await post({action:'mark',id,checked:val});if(!r.ok)throw new Error(r.error)}catch(err){x.checked=!val;render();toast('บันทึกไม่สำเร็จ: '+err.message)}
+});
+$('#dlgNo').addEventListener('click',()=>$('#dlg').classList.remove('on'));
+$('#dlgYes').addEventListener('click',async()=>{
+  $('#dlg').classList.remove('on');const id=delId;
+  try{const r=await post({action:'delete',id});if(!r.ok)throw new Error(r.error);items=items.filter(i=>i.id!==id);render();toast('ลบแล้ว')}catch(err){toast('ลบไม่สำเร็จ: '+err.message)}
+});
+if(pw)load();
+}
+</script>
+</body>
+</html>

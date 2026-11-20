@@ -1,0 +1,59 @@
+/*
+VOICE: a warm, lively Chinese classroom: festive but tidy, easy for kids on a phone
+IDEA: a Chinese New Year card / restaurant menu board, red lacquer and gold leaf
+PICTURE: lacquer-red header with lanterns and lattice, food cards with real dish photos
+COLOUR and TYPE: cinnabar red #b3161b, gold #f2c14e, ink #2b1a12 on rice paper #fffaf0; K2D titles and body, Noto Serif SC hanzi
+LAYOUT: header band, word-card grid (1 col phone, 2 col tablet, 3-4 desktop), homework band in red
+*/
+:root{color-scheme:light dark;
+  --bg:light-dark(#fffaf0,#1a0f0c);--paper:light-dark(#ffffff,#26150f);--ink:light-dark(#2b1a12,#f6eadb);
+  --muted:light-dark(#7a6253,#c8b29f);--line:light-dark(#efdcc4,#4a2d22);
+  --red:#b3161b;--red2:#8a0d12;--gold:#f2c14e;--gold2:#c9922a;
+  --t1:#d62828;--t2:#d98a00;--t3:#2a9d4b;--t4:#1f62c7;--ok:#2a9d4b;--bad:#d62828}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 "K2D","Noto Sans Thai",system-ui,sans-serif;overflow-x:clip}
+h1,h2,h3{font-family:"K2D",sans-serif;font-weight:500;line-height:1.15;margin:0;text-wrap:balance}
+.hz{font-family:"Noto Serif SC","Songti SC","SimSun",serif;font-weight:700}
+.wrap{max-width:1180px;margin:0 auto;padding:0 max(4vw,16px)}
+
+/* ---------- header ---------- */
+.top{position:relative;overflow:hidden;color:#fff;
+  background:
+   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg fill='none' stroke='%23f2c14e' stroke-opacity='.16' stroke-width='2'%3E%3Cpath d='M0 28h14v-14h28v28h-28v-14M28 0v14M28 42v14M42 28h14'/%3E%3C/g%3E%3C/svg%3E"),
+   radial-gradient(120% 140% at 50% 0%,#d4232a 0%,var(--red) 45%,var(--red2) 100%);
+  border-bottom:6px solid var(--gold);box-shadow:0 3px 0 var(--gold2) inset}
+.top .wrap{display:flex;align-items:center;justify-content:center;gap:clamp(10px,3vw,28px);padding-block:clamp(22px,4vw,40px);text-align:center}
+.lantern{width:clamp(44px,8vw,78px);flex:none;transform-origin:50% 0;animation:sway 4s ease-in-out infinite}
+.lantern.r{animation-delay:-2s}
+@keyframes sway{50%{transform:rotate(5deg)}0%,100%{transform:rotate(-5deg)}}
+@media (prefers-reduced-motion:reduce){.lantern{animation:none}}
+.brand h1{font-size:clamp(36px,7vw,60px);font-weight:600;color:var(--gold);letter-spacing:.02em;
+  text-shadow:0 2px 0 var(--red2),0 4px 14px rgba(0,0,0,.35)}
+.brand p{margin:6px 0 0;color:#ffe9c2;font-size:clamp(15px,2.2vw,18px)}
+.seal{display:inline-grid;place-items:center;padding:.18em .3em;white-space:nowrap;margin-inline-start:.35em;vertical-align:.25em;
+  border:2px solid var(--gold);border-radius:6px;color:var(--gold);font-size:.42em;line-height:1;transform:rotate(-6deg)}
+
+/* ---------- common ---------- */
+.band{padding:clamp(26px,4vw,52px) 0}
+.sec-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:18px}
+.sec-h h2{font-size:clamp(26px,4vw,36px)}
+.sec-h .hz{color:var(--red);font-size:clamp(22px,3.4vw,30px)}
+.hint{color:var(--muted);margin:0}
+.btn{appearance:none;border:0;border-radius:999px;min-height:46px;padding:0 18px;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font:500 16px "K2D",sans-serif;cursor:pointer;transition:transform .1s,filter .15s;white-space:nowrap}
+.btn:active{transform:scale(.97)}.btn:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.btn svg{width:20px;height:20px;flex:none}
+.btn-red{background:var(--red);color:#fff}.btn-red:hover{filter:brightness(1.1)}
+.btn-gold{background:var(--gold);color:#4a2400}.btn-gold:hover{filter:brightness(1.05)}
+.btn-ghost{background:transparent;color:var(--ink);border:2px solid var(--line)}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+input[type=text],input[type=password],input[type=search],select{width:100%;min-height:48px;font:16px "K2D",sans-serif;color:var(--ink);
+  background:var(--paper);border:2px solid var(--line);border-radius:12px;padding:0 14px}
+.lb{display:block;font-weight:600;margin:0 0 6px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(140%);background:#2b1a12;color:#fff;padding:12px 18px;border-radius:12px;
+  max-width:min(92vw,520px);z-index:50;transition:transform .25s,visibility .25s;visibility:hidden;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.toast.show{transform:translateX(-50%) translateY(0);visibility:visible}
+.foot{text-align:center;color:var(--muted);font-size:14px;padding:24px 16px 36px}
+.notice{background:light-dark(#fff3cd,#3a2a0a);border:1px solid var(--gold2);border-radius:12px;padding:12px 14px;margin:0 0 16px;font-size:15px}
+[hidden]{display:none!important}
