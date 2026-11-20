@@ -176,6 +176,8 @@ function loadVoices(){if(!('speechSynthesis' in window))return;const v=speechSyn
   zhVoice=v.find(x=>/zh[-_]CN/i.test(x.lang)&&/google|xiaoxiao|ting|tian/i.test(x.name))||v.find(x=>/zh[-_]CN/i.test(x.lang))||v.find(x=>/^(zh|cmn)/i.test(x.lang))||null}
 if('speechSynthesis' in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices}
 function say(text,rate){
+  if(rec)stopRec();
+  if(IS_IOS)releaseMic();
   if('speechSynthesis' in window&&(zhVoice||!voicesReady)){
     speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';if(zhVoice)u.voice=zhVoice;u.rate=rate;speechSynthesis.speak(u);return}
   const a=new Audio('https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=zh-CN&ttsspeed='+(rate<1?'0.3':'1')+'&q='+encodeURIComponent(text));
@@ -265,7 +267,8 @@ async function getMic(){
   src.connect(an);an.connect(mute);mute.connect(actx.destination); // Safari only processes nodes that reach the speakers
   mic={stream,src,an};return mic;
 }
-function releaseMic(){if(!mic)return;mic.stream.getTracks().forEach(t=>t.stop());try{mic.src.disconnect()}catch(e){}mic=null}
+function setSession(t){try{if(navigator.audioSession)navigator.audioSession.type=t}catch(e){}}
+function releaseMic(){if(mic){mic.stream.getTracks().forEach(t=>t.stop());try{mic.src.disconnect()}catch(e){}mic=null}if(IS_IOS)setSession('playback')}
 addEventListener('pagehide',releaseMic);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(rec)stopRec();releaseMic()}});
 
@@ -274,6 +277,7 @@ async function startSpeak(i,btn){
   if(!navigator.mediaDevices?.getUserMedia){toast('เบราว์เซอร์นี้ใช้ไมโครโฟนไม่ได้ ลองเปิดด้วย Safari หรือ Chrome');return}
   if('speechSynthesis' in window)speechSynthesis.cancel();
   actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  if(IS_IOS)setSession('play-and-record');
   const resumed=actx.resume();
   let m;
   try{m=await getMic();await resumed;if(actx.state!=='running')await actx.resume()}
@@ -300,6 +304,7 @@ async function startSpeak(i,btn){
 function stopRec(){
   const r=rec;rec=null;if(!r)return;cancelAnimationFrame(r.raf);
   r.btn.classList.remove('rec');r.btn.innerHTML=IC.mic+'<span>พูดอีกครั้ง</span>';
+  if(IS_IOS)releaseMic();
   if(r.sr){try{r.sr.stop()}catch(e){}setTimeout(()=>report(r,r.heard),900)}else report(r,null);
 }
 function report(r,heard){
