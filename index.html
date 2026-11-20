@@ -93,7 +93,7 @@
     <div class="sec-h"><h2>ส่งการบ้าน</h2><span class="hz">作业</span></div>
     <p style="margin:-6px 0 18px;color:#ffe9c2">อัดวิดีโอตัวเองพูดคำศัพท์ทั้ง 8 คำ แล้วส่งให้เหล่าซือ</p>
     <form class="hwbox" id="hwForm" novalidate>
-      <div id="cfgNote" class="notice" hidden>ยังไม่ได้ตั้งค่าระบบส่งการบ้าน (ครูต้องใส่ค่า Firebase ในไฟล์ config.js)</div>
+      <div id="cfgNote" class="notice" hidden>ยังไม่ได้ตั้งค่าระบบส่งการบ้าน (ครูต้องใส่ SCRIPT_URL ในไฟล์ config.js)</div>
       <div>
         <label class="lb" for="stName">ชื่อ-สกุล</label>
         <input type="text" id="stName" autocomplete="name" placeholder="เช่น ด.ญ.มะลิ ใจดี" maxlength="80" required>
@@ -103,7 +103,7 @@
         <label class="drop" id="drop">
           <input type="file" id="vid" accept="video/*">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" style="color:var(--red)"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>
-          <div id="dropTxt"><b>แตะเพื่อเลือกหรืออัดวิดีโอ</b><br><span class="hint" style="font-size:14px">ความยาวไม่เกิน 3 นาที · ไฟล์ใหญ่ระบบจะย่อให้อัตโนมัติ</span></div>
+          <div id="dropTxt"><b>แตะเพื่อเลือกหรืออัดวิดีโอ</b><br><span class="hint" style="font-size:14px">ไฟล์ไม่เกิน 300 MB</span></div>
           <video id="prev" controls playsinline muted></video>
         </label>
       </div>
@@ -333,16 +333,15 @@ document.addEventListener('click',e=>{
 
 }
 </script>
-<script type="module">
-import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
-import {getFirestore,collection,doc,setDoc,updateDoc,writeBatch,serverTimestamp,Bytes} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
+<script src="config.js"></script>
+<script>
+{
 const $=s=>document.querySelector(s);
 const toast=(m,ms=4000)=>{const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)};
-const C=window.LAOSHI_CONFIG||{},F=C.firebase||{};
-const ready=!!F.apiKey&&!/PASTE/.test(F.apiKey);
+const URL_=(window.LAOSHI_CONFIG||{}).SCRIPT_URL||'';
+const ready=/^https:\/\/script\.google(usercontent)?\.com\//.test(URL_);
 if(!ready)$('#cfgNote').hidden=false;
-const db=ready?getFirestore(initializeApp(F)):null;
-const MAX=20*1048576,CH=800*1024,MAXSEC=180;
+const MAX=300*1048576,CH=5*1024*1024; // 5 MB pieces (multiple of 256 KB, required by Google Drive)
 const vid=$('#vid'),prev=$('#prev');
 try{$('#stName').value=localStorage.getItem('laoshi_name')||''}catch(e){}
 vid.addEventListener('change',()=>{
@@ -351,65 +350,43 @@ vid.addEventListener('change',()=>{
   $('#dropTxt').innerHTML='<b>'+f.name.replace(/</g,'&lt;')+'</b><br><span class="hint" style="font-size:14px">'+(f.size/1048576).toFixed(1)+' MB · แตะเพื่อเปลี่ยนไฟล์</span>';
   prev.src=URL.createObjectURL(f);prev.style.display='block';
 });
-
-/* shrink a big phone video to ~480p so it fits the free Firestore plan (runs in real time) */
-async function compress(file,onp){
-  const v=document.createElement('video');v.src=URL.createObjectURL(file);v.playsInline=true;v.preload='auto';
-  await new Promise((ok,no)=>{v.onloadedmetadata=ok;v.onerror=()=>no(new Error('อ่านวิดีโอไม่ได้'))});
-  if(v.duration>MAXSEC+5)throw new Error('วิดีโอยาวเกิน 3 นาที ลองอัดให้สั้นลง');
-  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)throw new Error('เครื่องนี้ย่อวิดีโอไม่ได้ ลองอัดวิดีโอความละเอียดต่ำลง');
-  const k=Math.min(1,480/Math.min(v.videoWidth,v.videoHeight)),W=Math.round(v.videoWidth*k/2)*2,H=Math.round(v.videoHeight*k/2)*2;
-  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const g=cv.getContext('2d');
-  const ac=new (window.AudioContext||window.webkitAudioContext)(),dest=ac.createMediaStreamDestination();
-  ac.createMediaElementSource(v).connect(dest);
-  const stream=new MediaStream([...cv.captureStream(24).getVideoTracks(),...dest.stream.getAudioTracks()]);
-  const type=['video/mp4;codecs=avc1,mp4a','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t))||'';
-  const rec=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:650000,audioBitsPerSecond:64000});
-  const parts=[];rec.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};
-  const stopped=new Promise(r=>rec.onstop=r);let raf;
-  const paint=()=>{g.drawImage(v,0,0,W,H);onp(Math.min(1,v.currentTime/v.duration));if(!v.ended)raf=requestAnimationFrame(paint)};
-  await ac.resume();rec.start(1000);
-  try{await v.play()}catch(e){rec.stop();ac.close();throw new Error('กรุณากดปุ่มอัปโหลดอีกครั้ง')}
-  paint();await new Promise(r=>v.onended=r);rec.stop();await stopped;cancelAnimationFrame(raf);ac.close();
-  return new Blob(parts,{type:(type||'video/webm').split(';')[0]});
-}
-
+const post=o=>fetch(URL_,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(o)}).then(r=>r.json());
+function b64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
 $('#hwForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const name=$('#stName').value.trim().replace(/\s+/g,' '),f=vid.files[0];
   if(name.length<3){toast('กรุณาพิมพ์ชื่อ-สกุล');$('#stName').focus();return}
   if(!f){toast('กรุณาเลือกวิดีโอ');return}
   if(f.type&&!/^video\//.test(f.type)){toast('ไฟล์นี้ไม่ใช่วิดีโอ');return}
+  if(f.size>MAX){toast('วิดีโอใหญ่เกิน 300 MB ลองอัดให้สั้นลง');return}
   if(!ready){toast('ระบบส่งการบ้านยังไม่พร้อม แจ้งเหล่าซือนะ');return}
   try{localStorage.setItem('laoshi_name',name)}catch(e){}
   const btn=$('#sendBtn'),bar=$('#bar'),bt=$('#barTxt');btn.disabled=true;bar.style.display='block';
   const set=(p,t)=>{bar.firstElementChild.style.width=Math.round(p)+'%';bt.textContent=t};
+  const mime=f.type||'video/mp4';
   try{
-    let blob=f;
-    if(f.size>MAX){
-      set(0,'กำลังย่อขนาดวิดีโอ… (ใช้เวลาเท่าความยาววิดีโอ อย่าปิดหน้านี้)');
-      blob=await compress(f,p=>set(p*50,'กำลังย่อขนาดวิดีโอ '+Math.round(p*100)+'% · อย่าปิดหน้านี้'));
-      if(blob.size>MAX)throw new Error('วิดีโอยังใหญ่เกินไป ลองอัดให้สั้นลง');
-    }
-    const base=blob===f?0:50,n=Math.ceil(blob.size/CH),ref=doc(collection(db,'submissions'));
-    set(base+2,'กำลังส่ง…');
-    await setDoc(ref,{name,fileName:f.name.slice(0,120),mime:(blob.type||'video/mp4').split(';')[0],bytes:blob.size,chunks:n,createdAt:serverTimestamp(),checked:false,complete:false});
-    for(let i=0;i<n;i+=8){
-      const b=writeBatch(db);
-      for(let k=i;k<Math.min(n,i+8);k++){
-        const u=new Uint8Array(await blob.slice(k*CH,(k+1)*CH).arrayBuffer());
-        b.set(doc(ref,'chunks',String(k).padStart(4,'0')),{d:Bytes.fromUint8Array(u)});
+    set(2,'กำลังเตรียมส่ง… (อย่าปิดหน้านี้)');
+    const init=await post({action:'init',name,filename:f.name,mime,size:f.size});
+    if(!init.ok)throw new Error(init.error||'เริ่มส่งไม่ได้');
+    let res=null;
+    for(let s=0;s<f.size;s+=CH){
+      const end=Math.min(f.size,s+CH),data=b64(await f.slice(s,end).arrayBuffer());
+      for(let tr=0;tr<3;tr++){
+        try{res=await post({action:'chunk',uploadUrl:init.uploadUrl,start:s,end:end-1,total:f.size,mime,name,data});if(res.ok)break}
+        catch(err){res={ok:false,error:'เครือข่ายขัดข้อง'}}
+        await new Promise(r=>setTimeout(r,1500));
       }
-      await b.commit();
-      const p=Math.min(n,i+8)/n;set(base+(100-base)*p,'กำลังอัปโหลด '+Math.round(p*100)+'%');
+      if(!res.ok)throw new Error(res.error||'ส่งไม่สำเร็จ');
+      const p=end/f.size*100;set(p,'กำลังอัปโหลด '+Math.round(p)+'% · อย่าปิดหน้านี้');
     }
-    await updateDoc(ref,{complete:true});
+    if(!res.done)throw new Error('ส่งไม่ครบ');
     btn.style.display='none';bar.style.display='none';bt.textContent='';
     $('#done').style.display='block';$('#doneTxt').textContent=name+' · ส่งเมื่อ '+new Date().toLocaleString('th-TH');
-  }catch(err){console.error(err);bar.style.display='none';set(0,'');toast('ส่งไม่สำเร็จ: '+(err.message||err))}
+  }catch(err){console.error(err);bar.style.display='none';set(0,'');toast('ส่งไม่สำเร็จ: '+(err.message||err),5000)}
   btn.disabled=false;
 });
 $('#again').addEventListener('click',()=>{$('#done').style.display='none';$('#sendBtn').style.display='';vid.value='';prev.removeAttribute('src');prev.style.display='none';$('#drop').classList.remove('has');$('#dropTxt').innerHTML='<b>แตะเพื่อเลือกหรืออัดวิดีโอ</b>'});
+}
 </script>
 </body>
 </html>
