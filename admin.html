@@ -35,6 +35,16 @@
 .btn.sm{min-height:40px;padding:0 14px;font-size:14px}
 .badge{display:inline-block;font-size:12px;border-radius:99px;padding:1px 9px;background:var(--ok);color:#fff;vertical-align:3px}
 .empty{text-align:center;color:var(--muted);padding:40px 10px}
+.meter{height:10px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}.meter i{display:block;height:100%;background:var(--red)}
+.item .vbox video{position:absolute;inset:0;width:100%;height:100%;background:#000}
+.warn{background:var(--bad)}
+.item.new{box-shadow:0 0 0 3px var(--gold),0 10px 30px -12px rgba(179,22,27,.5)}
+.badge.nw{background:var(--red)}
+.live{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:14px}
+.live i{width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(42,157,75,.6);animation:ping 2s infinite}
+.live.off i{background:var(--muted);animation:none}
+@keyframes ping{70%{box-shadow:0 0 0 8px rgba(42,157,75,0)}100%{box-shadow:0 0 0 0 rgba(42,157,75,0)}}
+@media (prefers-reduced-motion:reduce){.live i{animation:none}}
 .dlg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;place-items:center;z-index:40;padding:16px}
 .dlg.on{display:grid}
 .dlg>div{background:var(--paper);border-radius:18px;padding:22px;max-width:380px;width:100%;display:grid;gap:14px}
@@ -47,7 +57,7 @@
 </header>
 
 <main class="band"><div class="wrap">
-  <div id="cfgNote" class="notice" hidden>ยังไม่ได้ตั้งค่า SCRIPT_URL ในไฟล์ config.js (ดูวิธีใน README)</div>
+  <div id="cfgNote" class="notice" hidden>ยังไม่ได้ใส่ SCRIPT_URL ในไฟล์ config.js (ดูวิธีใน README)</div>
 
   <form class="login" id="login">
     <h2>เข้าสู่ระบบครู</h2>
@@ -80,67 +90,120 @@
 <script>
 {
 const $=s=>document.querySelector(s);
-const toast=(m,ms=3000)=>{const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)};
+const toast=(m,ms=4000)=>{const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const URL_=(window.LAOSHI_CONFIG||{}).SCRIPT_URL||'';
-if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(URL_))$('#cfgNote').hidden=false;
-let pw='',items=[];
+const ready=/^https:\/\/script\.google(usercontent)?\.com\//.test(URL_);
+if(!ready)$('#cfgNote').hidden=false;
+const POLL=10000,TITLE=document.title;
+let pw='',items=[],known=null,newIds=new Set(),busy=false,sig='',actx=null,timer=0,links='';
 try{pw=sessionStorage.getItem('laoshi_pw')||''}catch(e){}
 const post=o=>fetch(URL_,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...o,pw})}).then(r=>r.json());
 
-async function load(){
-  $('#list').innerHTML='<p class="empty">กำลังโหลด…</p>';
+/* ---------- alerts for new homework ---------- */
+function beep(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume();
+  [0,.18].forEach((d,k)=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=k?1175:880;g.gain.setValueAtTime(.0001,actx.currentTime+d);
+  g.gain.exponentialRampToValueAtTime(.25,actx.currentTime+d+.02);g.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d+.16);o.connect(g);g.connect(actx.destination);o.start(actx.currentTime+d);o.stop(actx.currentTime+d+.18)})}catch(e){}}
+function notify(list){
+  const names=list.map(x=>x.name).join(', ');
+  toast('การบ้านใหม่: '+names,6000);beep();
+  try{if('Notification' in window&&Notification.permission==='granted'&&document.hidden)new Notification('เหล่าซือไหม · การบ้านใหม่',{body:names})}catch(e){}
+}
+function setTitle(){document.title=newIds.size?'('+newIds.size+') '+TITLE:TITLE}
+function liveText(on){
+  const t=new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const nb='Notification' in window&&Notification.permission==='default'?' <button class="btn btn-ghost sm" id="notiBtn" type="button">เปิดแจ้งเตือนบนเครื่อง</button>':'';
+  $('#links').innerHTML=links+`<span class="live ${on?'':'off'}"><i></i>${on?'อัปเดตอัตโนมัติ · ล่าสุด '+t:'เชื่อมต่อไม่ได้ จะลองใหม่อัตโนมัติ'}</span>`+nb;
+}
+
+/* ---------- data ---------- */
+async function load(silent){
+  if(!ready){$('#loginErr').textContent='ยังไม่ได้ตั้งค่า SCRIPT_URL';return}
+  if(busy)return;busy=true;
+  if(!silent)$('#list').innerHTML='<p class="empty">กำลังโหลด…</p>';
   try{
     const r=await post({action:'list'});
-    if(!r.ok)throw new Error(r.error);
-    items=r.items;$('#login').hidden=true;$('#app').hidden=false;
-    $('#links').innerHTML=`<a href="${esc(r.folderUrl)}" target="_blank" rel="noopener">เปิดโฟลเดอร์วิดีโอใน Drive</a><a href="${esc(r.sheetUrl)}" target="_blank" rel="noopener">เปิดรายชื่อใน Google Sheet</a>`;
-    render();
+    if(!r.ok)throw Object.assign(new Error(r.error),{auth:/รหัสผ่าน/.test(r.error||'')});
+    links=`<a href="${esc(r.folderUrl)}" target="_blank" rel="noopener">เปิดโฟลเดอร์วิดีโอใน Drive</a><a href="${esc(r.sheetUrl)}" target="_blank" rel="noopener">เปิดรายชื่อใน Google Sheet</a>`;
+    const fresh=r.items;
+    if(known){const added=fresh.filter(x=>!known.has(x.id));if(added.length){added.forEach(x=>newIds.add(x.id));notify(added)}}
+    known=new Set(fresh.map(x=>x.id));
+    const ns=JSON.stringify(fresh.map(x=>[x.id,x.checked]));
+    items=fresh;$('#login').hidden=true;$('#app').hidden=false;$('#loginErr').textContent='';
+    liveText(true);
+    if(!silent||ns!==sig){sig=ns;render(!silent)}
+    setTitle();
   }catch(err){
-    $('#app').hidden=true;$('#login').hidden=false;$('#loginErr').textContent=err.message||'เชื่อมต่อไม่ได้';
-    try{sessionStorage.removeItem('laoshi_pw')}catch(e){}
-  }
+    if(!silent||err.auth){
+      $('#app').hidden=true;$('#login').hidden=false;$('#loginErr').textContent=err.message||'เชื่อมต่อไม่ได้';
+      pw='';try{sessionStorage.removeItem('laoshi_pw')}catch(e){}stopPoll();
+    }else liveText(false);
+  }finally{busy=false}
 }
-function render(){
-  const q=$('#q').value.trim().toLowerCase(),f=$('#flt').value;
-  const people=new Set(items.map(x=>x.name.trim())).size,done=items.filter(x=>x.checked).length;
-  $('#stats').innerHTML=`<div class="stat"><b>${items.length}</b><span>วิดีโอที่ส่งมา</span></div><div class="stat"><b>${people}</b><span>นักเรียน</span></div><div class="stat"><b>${done}</b><span>ตรวจแล้ว</span></div><div class="stat"><b>${items.length-done}</b><span>รอตรวจ</span></div>`;
-  const v=items.filter(x=>(!q||x.name.toLowerCase().includes(q))&&(f==='all'||(f==='done')===x.checked));
-  $('#list').innerHTML=v.length?v.map(x=>`
-   <article class="item ${x.checked?'chk':''}" data-id="${esc(x.id)}">
+function startPoll(){stopPoll();timer=setInterval(()=>{if(pw&&!document.hidden)load(true)},POLL)}
+function stopPoll(){clearInterval(timer);timer=0}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&pw&&timer)load(true)});
+
+/* ---------- view: update cards in place so a playing video keeps playing ---------- */
+const filtered=()=>{const q=$('#q').value.trim().toLowerCase(),f=$('#flt').value;return items.filter(x=>(!q||x.name.toLowerCase().includes(q))&&(f==='all'||(f==='done')===x.checked))};
+const nameHTML=x=>`${esc(x.name)} ${newIds.has(x.id)?'<span class="badge nw">ใหม่</span>':''}${x.checked?' <span class="badge">ตรวจแล้ว</span>':''}`;
+const cardHTML=x=>`
+   <article class="item ${x.checked?'chk':''} ${newIds.has(x.id)?'new':''}" data-id="${esc(x.id)}">
      <div class="vbox"><button class="btn btn-gold sm" data-a="play" type="button">▶ ดูวิดีโอ</button></div>
-     <div class="info"><div class="nm">${esc(x.name)} ${x.checked?'<span class="badge">ตรวจแล้ว</span>':''}</div>
+     <div class="info"><div class="nm">${nameHTML(x)}</div>
        <div class="meta">${new Date(x.time).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'})} · ${x.mb} MB</div></div>
      <div class="row">
        <label class="chkl"><input type="checkbox" data-a="mark" ${x.checked?'checked':''}>ตรวจแล้ว</label>
        <a class="btn btn-ghost sm" href="https://drive.google.com/file/d/${encodeURIComponent(x.id)}/view" target="_blank" rel="noopener">เปิดใน Drive</a>
        <button class="btn btn-ghost sm" data-a="del" type="button">ลบ</button>
      </div>
-   </article>`).join(''):`<p class="empty">${items.length?'ไม่พบรายการที่ค้นหา':'ยังไม่มีนักเรียนส่งการบ้าน'}</p>`;
+   </article>`;
+function render(){
+  const people=new Set(items.map(x=>x.name.trim())).size,done=items.filter(x=>x.checked).length;
+  $('#stats').innerHTML=`<div class="stat"><b>${items.length}</b><span>วิดีโอที่ส่งมา</span></div><div class="stat"><b>${people}</b><span>นักเรียน</span></div><div class="stat"><b>${done}</b><span>ตรวจแล้ว</span></div><div class="stat"><b>${items.length-done}</b><span>รอตรวจ</span></div>`;
+  const v=filtered(),list=$('#list');
+  if(!v.length){list.innerHTML=`<p class="empty">${items.length?'ไม่พบรายการที่ค้นหา':'ยังไม่มีนักเรียนส่งการบ้าน · หน้านี้จะแสดงงานใหม่ให้เองทันทีที่มีคนส่ง'}</p>`;return}
+  list.querySelector('.empty')?.remove();
+  const have=new Map([...list.querySelectorAll('.item')].map(e=>[e.dataset.id,e])),keep=new Set(v.map(x=>x.id));
+  have.forEach((el,id)=>{if(!keep.has(id))el.remove()});
+  let prevEl=null;
+  for(const x of v){
+    let el=have.get(x.id);
+    if(!el||!el.isConnected){const t=document.createElement('template');t.innerHTML=cardHTML(x).trim();el=t.content.firstElementChild;prevEl?prevEl.after(el):list.prepend(el)}
+    else{el.classList.toggle('chk',x.checked);el.classList.toggle('new',newIds.has(x.id));el.querySelector('.nm').innerHTML=nameHTML(x);el.querySelector('[data-a=mark]').checked=x.checked}
+    prevEl=el;
+  }
 }
+function seen(id){if(newIds.delete(id)){const x=items.find(i=>i.id===id);if(x)render();setTitle()}}
 
-$('#login').addEventListener('submit',e=>{e.preventDefault();pw=$('#pw').value;try{sessionStorage.setItem('laoshi_pw',pw)}catch(e){}load()});
-$('#logout').addEventListener('click',()=>{pw='';try{sessionStorage.removeItem('laoshi_pw')}catch(e){}$('#app').hidden=true;$('#login').hidden=false;$('#pw').value=''});
-$('#reload').addEventListener('click',load);
+/* ---------- events ---------- */
+$('#login').addEventListener('submit',e=>{e.preventDefault();pw=$('#pw').value;try{sessionStorage.setItem('laoshi_pw',pw)}catch(e){}
+  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume()}catch(e){}
+  known=null;load().then(()=>{if(pw)startPoll()})});
+$('#logout').addEventListener('click',()=>{pw='';stopPoll();try{sessionStorage.removeItem('laoshi_pw')}catch(e){}$('#app').hidden=true;$('#login').hidden=false;$('#pw').value='';newIds.clear();setTitle()});
+$('#reload').addEventListener('click',()=>load(true));
 $('#q').addEventListener('input',render);$('#flt').addEventListener('change',render);
+$('#links').addEventListener('click',e=>{if(e.target.id==='notiBtn')Notification.requestPermission().then(()=>liveText(true))});
 
 let delId=null;
 $('#list').addEventListener('click',e=>{
   const el=e.target.closest('[data-a]');if(!el)return;const card=el.closest('.item'),id=card.dataset.id,x=items.find(i=>i.id===id);
-  if(el.dataset.a==='play'){card.querySelector('.vbox').innerHTML=`<iframe src="https://drive.google.com/file/d/${encodeURIComponent(id)}/preview" allow="autoplay; fullscreen" allowfullscreen title="วิดีโอของ ${esc(x.name)}"></iframe>`}
+  if(el.dataset.a==='play'){card.querySelector('.vbox').innerHTML=`<iframe src="https://drive.google.com/file/d/${encodeURIComponent(id)}/preview" allow="autoplay; fullscreen" allowfullscreen title="วิดีโอของ ${esc(x.name)}"></iframe>`;seen(id)}
   if(el.dataset.a==='del'){delId=id;$('#dlgTxt').textContent=x.name+' · ไฟล์จะถูกย้ายไปถังขยะใน Drive';$('#dlg').classList.add('on');$('#dlgNo').focus()}
 });
 $('#list').addEventListener('change',async e=>{
   if(e.target.dataset.a!=='mark')return;const id=e.target.closest('.item').dataset.id,x=items.find(i=>i.id===id),val=e.target.checked;
-  x.checked=val;render();
-  try{const r=await post({action:'mark',id,checked:val});if(!r.ok)throw new Error(r.error)}catch(err){x.checked=!val;render();toast('บันทึกไม่สำเร็จ: '+err.message)}
+  x.checked=val;newIds.delete(id);setTitle();render();
+  try{const r=await post({action:'mark',id,checked:val});if(!r.ok)throw new Error(r.error);sig=JSON.stringify(items.map(x=>[x.id,x.checked]))}
+  catch(err){x.checked=!val;render();toast('บันทึกไม่สำเร็จ: '+err.message)}
 });
 $('#dlgNo').addEventListener('click',()=>$('#dlg').classList.remove('on'));
 $('#dlgYes').addEventListener('click',async()=>{
   $('#dlg').classList.remove('on');const id=delId;
-  try{const r=await post({action:'delete',id});if(!r.ok)throw new Error(r.error);items=items.filter(i=>i.id!==id);render();toast('ลบแล้ว')}catch(err){toast('ลบไม่สำเร็จ: '+err.message)}
+  try{const r=await post({action:'delete',id});if(!r.ok)throw new Error(r.error);items=items.filter(i=>i.id!==id);known&&known.delete(id);newIds.delete(id);setTitle();sig=JSON.stringify(items.map(x=>[x.id,x.checked]));render();toast('ลบแล้ว')}
+  catch(err){toast('ลบไม่สำเร็จ: '+err.message)}
 });
-if(pw)load();
+if(pw)load().then(()=>{if(pw)startPoll()});
 }
 </script>
 </body>
